@@ -172,14 +172,43 @@ module axi4lite_slave #(
             assert(!(arready && rvalid));
         end
     end
-
-    always @(posedge aclk) begin
-        if (f_past_valid && aresetn) begin
+// C1: basic write transaction completes
+    always @(posedge aclk)
+        if (f_past_valid && aresetn)
             cover(bvalid && bready);
+
+    // C2: basic read transaction completes
+    always @(posedge aclk)
+        if (f_past_valid && aresetn)
             cover(rvalid && rready);
-            cover(bvalid && rvalid);
-        end
-    end
+
+    // C3: write-then-read sequence
+    reg f_wrote_once;
+    initial f_wrote_once = 0;
+    always @(posedge aclk)
+        if (!aresetn) f_wrote_once <= 0;
+        else if (bvalid && bready) f_wrote_once <= 1;
+
+    always @(posedge aclk)
+        if (f_past_valid && aresetn && f_wrote_once)
+            cover(rvalid && rready);
+
+    // C4: two complete write transactions
+    reg [1:0] f_write_count;
+    initial f_write_count = 0;
+    always @(posedge aclk)
+        if (!aresetn) f_write_count <= 0;
+        else if (bvalid && bready && f_write_count < 2)
+            f_write_count <= f_write_count + 1;
+
+    always @(posedge aclk)
+        if (f_past_valid && aresetn)
+            cover(f_write_count == 2);
+
+    // C5: read OKAY with rdata stable through handshake
+    always @(posedge aclk)
+        if (f_past_valid && aresetn && $past(rvalid) && !$past(rready))
+            cover(rvalid && rready && rresp == 2'b00);
 `endif
 
 endmodule
